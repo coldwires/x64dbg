@@ -23,6 +23,8 @@ class CalculatorDialog : public QDialog
         Octal,
         Bytes,
         Binary,
+        Ascii,
+        Unicode,
 
     };
 

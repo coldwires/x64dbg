@@ -2,6 +2,8 @@
 #include "ui_CalculatorDialog.h"
 #include "ValidateExpressionThread.h"
 
+#include <algorithm>
+
 static duint bswap(duint value)
 {
     duint result = 0;
@@ -37,6 +39,25 @@ QString CalculatorDialog::inFormat(const duint val, CalculatorDialog::Format for
         return QString("%1").arg(val, 1, 8, QChar('0')).toUpper();
     case Format::Bytes:
         return QString("%1").arg(bswap(val), 2 * sizeof(duint), 16, QChar('0')).toUpper();
+    case Format::Ascii:
+    case Format::Unicode:
+    {
+        // Read the value as it would sit in memory, so the text lines up with
+        // the Bytes field: 5A4D is "MZ", not "ZM".
+        const size_t unit = format == Format::Ascii ? sizeof(char) : sizeof(ushort);
+        size_t count = sizeof(duint) / unit;
+        while(count > 1 && !(val >> (8 * unit * (count - 1)))) //hide trailing zero units
+            count--;
+        QString ans;
+        for(size_t i = 0; i < count; i++)
+        {
+            const duint mask = unit == sizeof(char) ? 0xFF : 0xFFFF;
+            const ushort code = ushort((val >> (8 * unit * i)) & mask);
+            const QChar c(code);
+            ans += c.isPrint() ? c : QChar('.');
+        }
+        return ans;
+    }
     }
 }
 
@@ -52,6 +73,8 @@ CalculatorDialog::CalculatorDialog(QWidget* parent) : QDialog(parent), ui(new Ui
 
     ui->txtBytes->setInputMask(QString("HH").repeated(sizeof(duint)));
     ui->txtBin->setInputMask(QString("bbbb ").repeated(sizeof(duint) * 2).trimmed());
+    ui->txtAscii->setMaxLength(sizeof(duint));
+    ui->txtUnicode->setMaxLength(sizeof(duint) / sizeof(ushort));
 
     ui->txtExpression->setText("0");
     ui->txtExpression->selectAll();
@@ -135,33 +158,19 @@ void CalculatorDialog::expressionChanged(bool validExpression, bool validPointer
             ui->txtBin->setCursorPosition(cursorpos);
         }
 
-        if(value == (value & 0xFF))
         {
-            QChar c((ushort)value);
-            if(c.isPrint())
-                ui->txtAscii->setText(QString(c));
-            else
-                ui->txtAscii->setText("???");
+            //Keeping the caret still is what lets you type more than one
+            //character: selectAll() here meant the next keystroke replaced the
+            //previous one once the async revalidation came back.
+            int cursorpos = ui->txtAscii->cursorPosition();
+            ui->txtAscii->setText(inFormat(value, Format::Ascii));
+            ui->txtAscii->setCursorPosition(cursorpos);
         }
-        else
-            ui->txtAscii->setText("???");
-
-        ui->txtAscii->setCursorPosition(0);
-        ui->txtAscii->selectAll();
-        if(value == (value & 0xFFFF)) //UNICODE?
         {
-            QChar c = QChar((ushort)value);
-            if(c.isPrint())
-                ui->txtUnicode->setText(QString(c));
-            else
-                ui->txtUnicode->setText("????");
+            int cursorpos = ui->txtUnicode->cursorPosition();
+            ui->txtUnicode->setText(inFormat(value, Format::Unicode));
+            ui->txtUnicode->setCursorPosition(cursorpos);
         }
-        else
-        {
-            ui->txtUnicode->setText("????");
-        }
-        ui->txtUnicode->setCursorPosition(0);
-        ui->txtUnicode->selectAll();
 
         emit validAddress(validPointer);
     }
@@ -263,22 +272,41 @@ void CalculatorDialog::on_txtBin_textEdited(const QString & arg1)
     ui->txtExpression->setText(QString("%1").arg(val, 1, 16, QChar('0')).toUpper());
 }
 
+//Pack the typed characters back into a value, first character = lowest byte,
+//so what you type matches the Bytes field and the way it sits in memory.
+static duint fromCharacters(const QString & text, size_t unit)
+{
+    duint val = 0;
+    const size_t count = std::min<size_t>(text.length(), sizeof(duint) / unit);
+    for(size_t i = 0; i < count; i++)
+    {
+        const duint code = unit == sizeof(char) ? duint(text[int(i)].toLatin1() & 0xFF)
+                           : duint(text[int(i)].unicode());
+        val |= code << (8 * unit * i);
+    }
+    return val;
+}
+
 void CalculatorDialog::on_txtAscii_textEdited(const QString & arg1)
 {
-    QString text = arg1;
+    //Every other field here marks unusable input in red. This one never had to, because
+    //a single character was always representable; more than one no longer guarantees it.
+    for(const QChar & ch : arg1)
+    {
+        if(ch.unicode() > 0xFF)
+        {
+            ui->txtAscii->setStyleSheet("border: 2px solid red");
+            return;
+        }
+    }
     ui->txtAscii->setStyleSheet("");
-    ui->txtExpression->setText(QString().sprintf("%X", text[0].unicode()));
-    ui->txtAscii->setCursorPosition(0);
-    ui->txtAscii->selectAll();
+    ui->txtExpression->setText(inFormat(fromCharacters(arg1, sizeof(char)), Format::Hex));
 }
 
 void CalculatorDialog::on_txtUnicode_textEdited(const QString & arg1)
 {
-    QString text = arg1;
     ui->txtUnicode->setStyleSheet("");
-    ui->txtExpression->setText(QString().sprintf("%X", text[0].unicode()));
-    ui->txtUnicode->setCursorPosition(0);
-    ui->txtUnicode->selectAll();
+    ui->txtExpression->setText(inFormat(fromCharacters(arg1, sizeof(ushort)), Format::Hex));
 }
 
 void CalculatorDialog::on_btnGoto_clicked()
