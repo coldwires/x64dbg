@@ -53,6 +53,18 @@ CalculatorDialog::CalculatorDialog(QWidget* parent) : QDialog(parent), ui(new Ui
     ui->txtBytes->setInputMask(QString("HH").repeated(sizeof(duint)));
     ui->txtBin->setInputMask(QString("bbbb ").repeated(sizeof(duint) * 2).trimmed());
 
+    //The expression box is the full debugger evaluator, but nothing on the dialog
+    //says so, and bare numbers are hexadecimal. Typing 45+45 and getting 138 is a
+    //common first experience.
+    ui->txtExpression->setToolTip(tr("Numbers are hexadecimal by default. Prefix with . for decimal:\n"
+                                     "    45        is 0x45 (69)\n"
+                                     "    .45       is 45\n"
+                                     "    45+45     is 0x8A (138)\n"
+                                     "    .45+.45   is 90\n"
+                                     "\n"
+                                     "Supports + - * / % ^ << >> && || and parentheses, registers such\n"
+                                     "as cip, memory such as [esp], and functions such as mod.base(cip)."));
+    ui->txtExpression->setPlaceholderText(tr("Expression, hexadecimal by default, . for decimal"));
     ui->txtExpression->setText("0");
     ui->txtExpression->selectAll();
     ui->txtExpression->setFocus();
