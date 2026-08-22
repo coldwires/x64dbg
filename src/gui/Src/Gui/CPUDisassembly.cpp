@@ -435,6 +435,9 @@ void CPUDisassembly::setupRightClickContextMenu()
     MenuBuilder* analysisMenu = new MenuBuilder(this);
     QAction* toggleFunctionAction = makeShortcutAction(DIcon("functions"), tr("Function"), SLOT(toggleFunctionSlot()), "ActionToggleFunction");
     analysisMenu->addAction(makeShortcutAction(DIcon("analyzemodule"), tr("Analyze module"), SLOT(analyzeModuleSlot()), "ActionAnalyzeModule"));
+#ifdef _WIN64
+    analysisMenu->addAction(makeAction(DIcon("analysis"), tr("Analyze exception directory"), SLOT(analyzeExceptionDirectorySlot())));
+#endif //_WIN64
     analysisMenu->addAction(toggleFunctionAction, [this, toggleFunctionAction](QMenu*)
     {
         if(!DbgFunctionOverlaps(rvaToVa(getSelectionStart()), rvaToVa(getSelectionEnd())))
@@ -2090,6 +2093,12 @@ void CPUDisassembly::setEncodeTypeSlot()
 void CPUDisassembly::analyzeModuleSlot()
 {
     DbgCmdExec("cfanal");
+    DbgCmdExec("analx");
+}
+
+void CPUDisassembly::analyzeExceptionDirectorySlot()
+{
+    DbgCmdExec("exanalyse");
     DbgCmdExec("analx");
 }
 

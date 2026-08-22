@@ -102,6 +102,7 @@ public slots:
     void setEncodeTypeSlot();
     void setEncodeTypeRangeSlot();
     void analyzeModuleSlot();
+    void analyzeExceptionDirectorySlot();
     void copyTokenTextSlot();
     void copyTokenValueSlot();
     void downloadCurrentSymbolsSlot();
