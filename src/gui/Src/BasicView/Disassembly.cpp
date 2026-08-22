@@ -86,6 +86,12 @@ void Disassembly::updateColors()
     mInstructionHighlightColor = ConfigColor("InstructionHighlightColor");
     mDisassemblyRelocationUnderlineColor = ConfigColor("DisassemblyRelocationUnderlineColor");
     mSelectionColor = ConfigColor("DisassemblySelectionColor");
+    mCurrentFunctionBackgroundColor = ConfigColor("DisassemblyCurrentFunctionBackgroundColor");
+    //The stock colour suits a light background, and the bundled dark theme sets its own.
+    //A hand made dark scheme has neither, so derive a tint from the background rather
+    //than painting a pale slab across the function.
+    if(mCurrentFunctionBackgroundColor == QColor("#FFEEDD") && mBackgroundColor.lightness() < 128)
+        mCurrentFunctionBackgroundColor = mBackgroundColor.lighter(140);
     mCipBackgroundColor = ConfigColor("DisassemblyCipBackgroundColor");
     mCipColor = ConfigColor("DisassemblyCipColor");
     mBreakpointBackgroundColor = ConfigColor("DisassemblyBreakpointBackgroundColor");
@@ -218,6 +224,31 @@ static void mnemonicBriefRichText(RichTextPainter::List & richText, const Instru
  *
  * @return      String to paint.
  */
+//Mark the visible rows that belong to the same function as the caret. Membership is
+//tested per row rather than by containment in a start..end range: x64dbg stores a
+//function as one interval, so a range can span padding and unrelated functions that
+//are not part of it. Memoised on the selection, because paintContent runs for every
+//column of every visible row while prepareData only runs on scroll or reload.
+void Disassembly::updateCurrentFunction()
+{
+    mCurrentFunctionSelection = rvaToVa(mSelection.fromIndex);
+    mCurrentFunctionResolved = true;
+    mCurrentFunctionStart = 0;
+    mRowInCurrentFunction.assign(mInstBuffer.size(), false);
+
+    duint caretEnd = 0;
+    if(!DbgIsDebugging() || !DbgFunctionGet(mCurrentFunctionSelection, &mCurrentFunctionStart, &caretEnd))
+        return;
+
+    for(int i = 0; i < mInstBuffer.size(); i++)
+    {
+        duint start = 0, end = 0;
+        auto va = rvaToVa(mInstBuffer.at(i).rva);
+        if(DbgFunctionGet(va, &start, &end) && start == mCurrentFunctionStart)
+            mRowInCurrentFunction[i] = true;
+    }
+}
+
 QString Disassembly::paintContent(QPainter* painter, duint row, duint col, int x, int y, int w, int h)
 {
     auto rowOffset = row - getTableOffset();
@@ -233,6 +264,9 @@ QString Disassembly::paintContent(QPainter* painter, duint row, duint col, int x
     }
     bool instSelected = isSelected(&mInstBuffer, rowOffset);
     auto va = rvaToVa(mInstBuffer.at(rowOffset).rva);
+
+    if(!mCurrentFunctionResolved || mCurrentFunctionSelection != rvaToVa(mSelection.fromIndex))
+        updateCurrentFunction();
     auto traceCount = DbgFunctions()->GetTraceRecordHitCount(va);
 
     // Highlight if selected
@@ -256,6 +290,12 @@ QString Disassembly::paintContent(QPainter* painter, duint row, duint col, int x
                           QBrush(QColor(mTracedAddressBackgroundColor.red(),
                                         mTracedAddressBackgroundColor.green(),
                                         std::max(0, std::min(256, mTracedAddressBackgroundColor.blue() + colorDiff)))));
+    }
+    else if(rowOffset < mRowInCurrentFunction.size() && mRowInCurrentFunction[rowOffset])
+    {
+        //Whole body of the function the caret sits in. Lowest priority, so selection,
+        //traced rows and everything painted per column still win.
+        painter->fillRect(QRect(x, y, w, h), QBrush(mCurrentFunctionBackgroundColor));
     }
 
     switch(col)
@@ -1832,6 +1872,9 @@ void Disassembly::prepareData()
     }
 
     mSelectedInstruction = DisassembleAt(mSelection.fromIndex);
+
+    //Re-resolved on reload so that running an analysis is picked up.
+    updateCurrentFunction();
 
     setNbrOfLineToPrint(mInstBuffer.size());
 

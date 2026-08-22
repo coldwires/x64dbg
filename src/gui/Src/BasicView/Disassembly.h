@@ -217,6 +217,14 @@ protected:
     QColor mAddressBackgroundColor;
     QColor mAddressColor;
     QColor mTracedSelectedAddressBackgroundColor;
+    QColor mCurrentFunctionBackgroundColor;
+
+    //Which visible rows belong to the same function as the caret
+    void updateCurrentFunction();
+    bool mCurrentFunctionResolved = false;
+    duint mCurrentFunctionSelection = 0;
+    duint mCurrentFunctionStart = 0;
+    std::vector<bool> mRowInCurrentFunction;
 
     QColor mBytesColor;
     QColor mBytesBackgroundColor;

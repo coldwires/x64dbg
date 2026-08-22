@@ -459,6 +459,7 @@ void AppearanceDialog::colorInfoListInit()
     colorInfoListCategory(tr("Disassembly:"), "DisassemblyBackgroundColor", "Disassembly");
     colorInfoListAppend(tr("Background"), "DisassemblyBackgroundColor", "");
     colorInfoListAppend(tr("Selection"), "DisassemblySelectionColor", "");
+    colorInfoListAppend(tr("Current Function"), "DisassemblyCurrentFunctionBackgroundColor", "");
     colorInfoListAppend(ArchValue(tr("EIP"), tr("RIP")), "DisassemblyCipColor", "DisassemblyCipBackgroundColor");
     colorInfoListAppend(tr("Addresses"), "DisassemblyAddressColor", "DisassemblyAddressBackgroundColor");
     colorInfoListAppend(tr("Selected Addresses"), "DisassemblySelectedAddressColor", "DisassemblySelectedAddressBackgroundColor");
