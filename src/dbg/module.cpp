@@ -761,6 +761,10 @@ static void ReadDebugDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
 }
 
 #ifdef _WIN64
+#ifndef UNW_FLAG_CHAININFO
+#define UNW_FLAG_CHAININFO 0x4
+#endif //UNW_FLAG_CHAININFO
+
 static void ReadExceptionDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
 {
     // Clear runtime functions
@@ -780,6 +784,7 @@ static void ReadExceptionDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
     Info.runtimeFunctions.resize(totalBytes / sizeof(RUNTIME_FUNCTION));
     memcpy(Info.runtimeFunctions.data(), baseRuntimeFunctions, Info.runtimeFunctions.size() * sizeof(RUNTIME_FUNCTION));
 
+    const auto mapEnd = FileMapVA + Info.loadedSize;
     for(const auto & runtimeFunction : Info.runtimeFunctions)
     {
         if((runtimeFunction.UnwindData & RUNTIME_FUNCTION_INDIRECT) != 0)
@@ -789,7 +794,33 @@ static void ReadExceptionDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
             if(parentIndex < Info.runtimeFunctions.size())
             {
                 const auto & parentEntry = Info.runtimeFunctions[parentIndex];
-                Info.parentFunctions.emplace_back(parentEntryRva, parentEntry.BeginAddress);
+                Info.parentFunctions.emplace_back(runtimeFunction.BeginAddress, parentEntry.BeginAddress);
+            }
+            continue;
+        }
+
+        //An entry whose UNWIND_INFO carries UNW_FLAG_CHAININFO describes a fragment of
+        //another function, and the entry of that function follows the unwind codes.
+        //This is what compilers emit in practice; the indirect bit above is rare.
+        auto unwindOffset = Info.isVirtual
+                            ? runtimeFunction.UnwindData
+                            : (ULONG)ModRvaToOffset(0, Info.headers, Info.loadedSize, runtimeFunction.UnwindData);
+        if(unwindOffset == 0)
+            continue;
+
+        auto unwindInfo = (const unsigned char*)(FileMapVA + unwindOffset);
+        if((ULONG_PTR)unwindInfo + 4 > mapEnd || (ULONG_PTR)unwindInfo < FileMapVA)
+            continue;
+        if((unwindInfo[0] >> 3) & UNW_FLAG_CHAININFO)
+        {
+            //UNWIND_INFO is followed by CountOfCodes unwind codes, padded to an even
+            //count, and then the RUNTIME_FUNCTION of the parent.
+            auto chain = (ULONG_PTR)unwindInfo + 4 + ((unwindInfo[2] + 1) & ~1) * sizeof(USHORT);
+            if(chain + sizeof(RUNTIME_FUNCTION) <= mapEnd)
+            {
+                auto parentEntry = (PRUNTIME_FUNCTION)chain;
+                if(parentEntry->BeginAddress != runtimeFunction.BeginAddress)
+                    Info.parentFunctions.emplace_back(runtimeFunction.BeginAddress, parentEntry->BeginAddress);
             }
         }
     }

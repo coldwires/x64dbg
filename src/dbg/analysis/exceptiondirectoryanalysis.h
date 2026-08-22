@@ -17,6 +17,7 @@ private:
 
 #ifdef _WIN64
     std::vector<RUNTIME_FUNCTION> mRuntimeFunctions;
+    std::vector<std::pair<uint32_t, uint32_t>> mParentFunctions;
 #endif // _WIN64
 };
 
